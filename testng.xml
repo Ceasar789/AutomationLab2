@@ -5,16 +5,19 @@
   <listeners>
     <listener class-name="utils.SuiteListener"/>
   </listeners>
-  <test thread-count="2" name="Regression Tests">
+  <test thread-count="1" name="Regression Tests">
     <classes>
-      <class name="AutomationExercise.AutomationExercise"/>
-      <class name="tests.AutomationExerciseTests"/>
       <class name="tests.RegisterUserTest"/>
       <class name="tests.LoginCorrectTest"/>
       <class name="tests.LoginIncorrectTest"/>
       <class name="tests.LogoutUserTest"/>
       <class name="tests.RegisterExistingEmailTest"/>
       <class name="tests.ContactUsTest"/>
+      <class name="tests.TestCasesPageTest"/>
+      <class name="tests.VerifyProductsTest"/>
+      <class name="tests.SearchProductTest"/>
+      <class name="tests.VerifySubscriptionTest"/>
+      <class name="tests.VerifySubscriptionCartTest"/>
     </classes>
   </test>
 </suite>
