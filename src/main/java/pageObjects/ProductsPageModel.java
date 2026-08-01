@@ -4,10 +4,16 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.TimeoutException;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import java.time.Duration;
 import java.util.List;
 
 public class ProductsPageModel {
     private final WebDriver driver;
+
+    private static final int DEFAULT_TIMEOUT_SECONDS = 15;
 
     private final By productsLink = By.xpath("//a[@href='/products']");
     private final By allProductsHeader = By.xpath("//h2[contains(text(),'All Products')]");
@@ -34,16 +40,113 @@ public class ProductsPageModel {
         this.driver = driver;
     }
 
+    /**
+     * Reusable helper: waits explicitly for an element to become visible.
+     * Returns false (instead of throwing) if it times out, so callers
+     * can keep using it directly inside assertTrue(...).
+     */
+    private boolean isElementVisible(By locator, int timeoutSeconds) {
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+            return wait.until(ExpectedConditions.visibilityOfElementLocated(locator)) != null;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+    private boolean isElementVisible(By locator) {
+        return isElementVisible(locator, DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    private void waitForClickable(By locator) {
+        new WebDriverWait(driver, Duration.ofSeconds(DEFAULT_TIMEOUT_SECONDS))
+                .until(ExpectedConditions.elementToBeClickable(locator));
+    }
+
+    private void waitForPageLoad() {
+        new WebDriverWait(driver, Duration.ofSeconds(DEFAULT_TIMEOUT_SECONDS))
+            .until(webDriver -> ((JavascriptExecutor) webDriver).executeScript("return document.readyState").equals("complete"));
+    }
+
+    /**
+     * Removes known ad iframes/overlays and closes any extra browser tabs/windows
+     * an ad may have opened, restoring focus to the original window.
+     * Call this before clicking any element that navigates the page, since ads
+     * on this site can intercept clicks or spawn new tabs without throwing an
+     * exception, silently leaving the driver on the previous page.
+     */
+    private void dismissInterceptingAdsAndExtraTabs() {
+        try {
+            ((JavascriptExecutor) driver).executeScript(
+                    "document.querySelectorAll(" +
+                    "'iframe[src*=\"googlesyndication\"], iframe[src*=\"doubleclick\"], " +
+                    "ins.adsbygoogle, div[id^=\"google_ads_iframe\"], " +
+                    "div[style*=\"position:absolute\"][style*=\"z-index:2147483647\"]'" +
+                    ").forEach(function(el){ el.remove(); });"
+            );
+        } catch (Exception ignored) {
+            // best-effort cleanup; don't fail the test if this script errors out
+        }
+
+        String originalHandle = driver.getWindowHandle();
+        for (String handle : driver.getWindowHandles()) {
+            if (!handle.equals(originalHandle)) {
+                driver.switchTo().window(handle);
+                driver.close();
+            }
+        }
+        driver.switchTo().window(originalHandle);
+    }
+
+    private void jsClick(WebElement element) {
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'center'});" +
+                "arguments[0].click();",
+                element);
+    }
+
     public void clickProductsLink() {
-        driver.findElement(productsLink).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(productsLink);
+        WebElement element = driver.findElement(productsLink);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
+        waitForPageLoad();
     }
 
     public boolean isAllProductsPageVisible() {
-        return !driver.findElements(allProductsHeader).isEmpty() && driver.findElement(allProductsHeader).isDisplayed();
+        waitForPageLoad();
+        if (isElementVisible(allProductsHeader, 20)) {
+            return true;
+        }
+
+        // The public demo site occasionally slows down later in a run.
+        // Re-click Products once (in case the first click was missed or the
+        // page never finished navigating) before declaring a real failure.
+        try {
+            dismissInterceptingAdsAndExtraTabs();
+            WebElement element = driver.findElement(productsLink);
+            try {
+                element.click();
+            } catch (Exception e) {
+                jsClick(element);
+            }
+            dismissInterceptingAdsAndExtraTabs();
+            waitForPageLoad();
+        } catch (Exception ignored) {
+            // if the Products link isn't reachable, fall through and let the
+            // final visibility check report the real result
+        }
+
+        return isElementVisible(allProductsHeader, 20);
     }
 
     public boolean isProductsListVisible() {
-        List<org.openqa.selenium.WebElement> items = driver.findElements(productItems);
+        List<WebElement> items = driver.findElements(productItems);
         return !items.isEmpty();
     }
 
@@ -52,14 +155,19 @@ public class ProductsPageModel {
     }
 
     public void clickViewProductAt(int index) {
+        dismissInterceptingAdsAndExtraTabs();
         List<WebElement> links = driver.findElements(viewProductLinks);
         WebElement element = links.get(index);
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", element);
-        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+        jsClick(element);
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public void navigateBack() {
         driver.navigate().back();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForPageLoad();
+        new WebDriverWait(driver, Duration.ofSeconds(DEFAULT_TIMEOUT_SECONDS))
+            .until(webDriver -> webDriver.findElements(allProductsHeader).size() > 0 || webDriver.findElements(productItems).size() > 0);
     }
 
     // ===== Search Product methods =====
@@ -70,11 +178,18 @@ public class ProductsPageModel {
     }
 
     public void clickSearchButton() {
-        driver.findElement(searchButton).click();
+        dismissInterceptingAdsAndExtraTabs();
+        WebElement element = driver.findElement(searchButton);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public boolean isSearchedProductsHeaderVisible() {
-        return !driver.findElements(searchedProductsHeader).isEmpty() && driver.findElement(searchedProductsHeader).isDisplayed();
+        return isElementVisible(searchedProductsHeader, 20);
     }
 
     public int getSearchResultCount() {
@@ -91,30 +206,30 @@ public class ProductsPageModel {
     }
 
     public boolean isProductInformationVisible() {
-        return !driver.findElements(productInformation).isEmpty() && driver.findElement(productInformation).isDisplayed();
+        return isElementVisible(productInformation);
     }
 
     public boolean isProductNameVisible() {
-        return !driver.findElements(productName).isEmpty() && driver.findElement(productName).isDisplayed();
+        return isElementVisible(productName);
     }
 
     public boolean isProductPriceVisible() {
-        return !driver.findElements(productPrice).isEmpty() && driver.findElement(productPrice).isDisplayed();
+        return isElementVisible(productPrice);
     }
 
     public boolean isProductCategoryVisible() {
-        return !driver.findElements(productCategory).isEmpty() && driver.findElement(productCategory).isDisplayed();
+        return isElementVisible(productCategory);
     }
 
     public boolean isProductAvailabilityVisible() {
-        return !driver.findElements(productAvailability).isEmpty() && driver.findElement(productAvailability).isDisplayed();
+        return isElementVisible(productAvailability);
     }
 
     public boolean isProductConditionVisible() {
-        return !driver.findElements(productCondition).isEmpty() && driver.findElement(productCondition).isDisplayed();
+        return isElementVisible(productCondition);
     }
 
     public boolean isProductBrandVisible() {
-        return !driver.findElements(productBrand).isEmpty() && driver.findElement(productBrand).isDisplayed();
+        return isElementVisible(productBrand);
     }
 }

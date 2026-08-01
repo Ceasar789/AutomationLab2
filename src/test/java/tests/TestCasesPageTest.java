@@ -1,7 +1,6 @@
 package tests;
 
 import java.lang.reflect.Method;
-import java.time.Duration;
 
 import org.testng.ITestResult;
 import org.testng.annotations.AfterMethod;
@@ -24,7 +23,10 @@ public class TestCasesPageTest extends BaseTest {
         setupDriver("chrome");
         driver.manage().window().maximize();
         driver.get(Config.BASE_URL);
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(Config.IMPLICIT_WAIT_SECONDS));
+        // NOTE: implicit wait intentionally removed. Mixing implicit and explicit
+        // waits on the same driver causes unpredictable total wait times and was
+        // the source of the ~20s stalls before failures. All visibility/clickability
+        // checks now rely solely on explicit WebDriverWait calls inside the page objects.
         homeActions = new HomePageActions();
         testCasesActions = new TestCasesActions();
     }

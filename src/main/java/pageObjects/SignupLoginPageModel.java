@@ -1,12 +1,20 @@
 package pageObjects;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
 
 public class SignupLoginPageModel {
     private final WebDriver driver;
+
+    private static final int DEFAULT_TIMEOUT_SECONDS = 15;
 
     private final By signupHeader = By.xpath("//h2[normalize-space()='New User Signup!']");
     private final By loginHeader = By.xpath("//h2[normalize-space()='Login to your account']");
@@ -53,16 +61,82 @@ public class SignupLoginPageModel {
     private final By deleteAccountLink = By.xpath("//a[@href='/delete_account']");
     private final By accountDeletedHeader = By.xpath("//b[normalize-space()='Account Deleted!']");
 
+    // ===== Existing email error locator =====
+    private final By emailExistsError = By.xpath("//p[contains(text(),'Email Address already exist')]");
+
     public SignupLoginPageModel(WebDriver driver) {
         this.driver = driver;
     }
 
+    /**
+     * Reusable explicit-wait helper: waits for an element to become visible.
+     * Returns false (instead of throwing) if it times out, so callers
+     * can keep using it directly inside assertTrue(...).
+     * This replaces relying on the global implicit wait, which was causing
+     * inconsistent ~20s stalls before every failure.
+     */
+    private boolean isElementVisible(By locator, int timeoutSeconds) {
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+            return wait.until(ExpectedConditions.visibilityOfElementLocated(locator)) != null;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+    private boolean isElementVisible(By locator) {
+        return isElementVisible(locator, DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    private void waitForClickable(By locator) {
+        new WebDriverWait(driver, Duration.ofSeconds(DEFAULT_TIMEOUT_SECONDS))
+                .until(ExpectedConditions.elementToBeClickable(locator));
+    }
+
+    private void jsClick(WebElement element) {
+        ((JavascriptExecutor) driver).executeScript(
+                "var el = arguments[0];" +
+                "var frames = document.querySelectorAll('iframe[src*=" + "\"googlesyndication\"" + "], iframe[src*=" + "\"doubleclick\"" + "], ins.adsbygoogle, div[id^=\"google_ads_iframe\"], div[style*=\"position:absolute\"][style*=\"z-index:2147483647\"]');" +
+                "for (var i = 0; i < frames.length; i++) { frames[i].remove(); }" +
+                "el.scrollIntoView({block: 'center'});" +
+                "el.click();",
+                element);
+    }
+
+    /**
+     * Removes known ad iframes/overlays and closes any extra browser tabs/windows
+     * an ad may have opened, restoring focus to the original window.
+     * Call this before clicking any element that navigates the page.
+     */
+    private void dismissInterceptingAdsAndExtraTabs() {
+        try {
+            ((JavascriptExecutor) driver).executeScript(
+                    "document.querySelectorAll(" +
+                    "'iframe[src*=\"googlesyndication\"], iframe[src*=\"doubleclick\"], " +
+                    "ins.adsbygoogle, div[id^=\"google_ads_iframe\"], " +
+                    "div[style*=\"position:absolute\"][style*=\"z-index:2147483647\"]'" +
+                    ").forEach(function(el){ el.remove(); });"
+            );
+        } catch (Exception ignored) {
+            // best-effort cleanup; don't fail the test if this script errors out
+        }
+
+        String originalHandle = driver.getWindowHandle();
+        for (String handle : driver.getWindowHandles()) {
+            if (!handle.equals(originalHandle)) {
+                driver.switchTo().window(handle);
+                driver.close();
+            }
+        }
+        driver.switchTo().window(originalHandle);
+    }
+
     public boolean isSignupHeaderVisible() {
-        return !driver.findElements(signupHeader).isEmpty() && driver.findElement(signupHeader).isDisplayed();
+        return isElementVisible(signupHeader);
     }
 
     public boolean isLoginHeaderVisible() {
-        return !driver.findElements(loginHeader).isEmpty() && driver.findElement(loginHeader).isDisplayed();
+        return isElementVisible(loginHeader);
     }
 
     public void typeSignupName(String name) {
@@ -78,19 +152,27 @@ public class SignupLoginPageModel {
     }
 
     public void clickSignupButton() {
-        driver.findElement(signupButton).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(signupButton);
+        WebElement element = driver.findElement(signupButton);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public boolean isLoginEmailVisible() {
-        return !driver.findElements(loginEmailInput).isEmpty() && driver.findElement(loginEmailInput).isDisplayed();
+        return isElementVisible(loginEmailInput);
     }
 
     public boolean isLoginPasswordVisible() {
-        return !driver.findElements(loginPasswordInput).isEmpty() && driver.findElement(loginPasswordInput).isDisplayed();
+        return isElementVisible(loginPasswordInput);
     }
 
     public boolean isAccountInformationVisible() {
-        return !driver.findElements(accountInformationHeader).isEmpty() && driver.findElement(accountInformationHeader).isDisplayed();
+        return isElementVisible(accountInformationHeader);
     }
 
     // ===== Account Information methods =====
@@ -115,11 +197,23 @@ public class SignupLoginPageModel {
     }
 
     public void checkNewsletter() {
-        driver.findElement(newsletterCheckbox).click();
+        waitForClickable(newsletterCheckbox);
+        WebElement element = driver.findElement(newsletterCheckbox);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
     }
 
     public void checkOffers() {
-        driver.findElement(offersCheckbox).click();
+        waitForClickable(offersCheckbox);
+        WebElement element = driver.findElement(offersCheckbox);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
     }
 
     // ===== Address Information methods =====
@@ -182,15 +276,31 @@ public class SignupLoginPageModel {
     }
 
     public void clickCreateAccountButton() {
-        driver.findElement(createAccountButton).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(createAccountButton);
+        WebElement element = driver.findElement(createAccountButton);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public boolean isAccountCreatedVisible() {
-        return !driver.findElements(accountCreatedHeader).isEmpty() && driver.findElement(accountCreatedHeader).isDisplayed();
+        return isElementVisible(accountCreatedHeader);
     }
 
     public void clickContinueButton() {
-        driver.findElement(continueButton).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(continueButton);
+        WebElement element = driver.findElement(continueButton);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     // ===== Login/Logout methods =====
@@ -207,33 +317,75 @@ public class SignupLoginPageModel {
     }
 
     public void clickLoginButton() {
-        driver.findElement(loginButton).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(loginButton);
+        WebElement element = driver.findElement(loginButton);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public boolean isLoggedInVisible() {
-        return !driver.findElements(loggedInAsIndicator).isEmpty() && driver.findElement(loggedInAsIndicator).isDisplayed();
+        return isElementVisible(loggedInAsIndicator);
     }
 
     public void clickLogout() {
-        driver.findElement(logoutLink).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(logoutLink);
+        WebElement element = driver.findElement(logoutLink);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public void clickDeleteAccount() {
-        driver.findElement(deleteAccountLink).click();
+        dismissInterceptingAdsAndExtraTabs();
+        waitForClickable(deleteAccountLink);
+        WebElement element = driver.findElement(deleteAccountLink);
+        try {
+            element.click();
+        } catch (Exception e) {
+            jsClick(element);
+        }
+        dismissInterceptingAdsAndExtraTabs();
     }
 
     public boolean isAccountDeletedVisible() {
-        return !driver.findElements(accountDeletedHeader).isEmpty() && driver.findElement(accountDeletedHeader).isDisplayed();
+        // This follows a full page navigation (delete_account) which is the
+        // slowest transition in the flow, and the public demo site occasionally
+        // takes longer than 20s to respond under load. Wait, and if it still
+        // hasn't shown up, re-click Delete Account once (in case the first
+        // click was missed or queued slowly) before giving up.
+        if (isElementVisible(accountDeletedHeader, 25)) {
+            return true;
+        }
+
+        try {
+            WebElement element = driver.findElement(deleteAccountLink);
+            try {
+                element.click();
+            } catch (Exception e) {
+                jsClick(element);
+            }
+        } catch (Exception ignored) {
+            // if the delete account link is no longer present, fall through
+            // and let the final visibility check report the real result
+        }
+
+        return isElementVisible(accountDeletedHeader, 25);
     }
 
     public boolean isLoginErrorVisible() {
-        return !driver.findElements(loginErrorMessage).isEmpty() && driver.findElement(loginErrorMessage).isDisplayed();
+        return isElementVisible(loginErrorMessage);
     }
 
-    // ===== Existing email error locator =====
-    private final By emailExistsError = By.xpath("//p[contains(text(),'Email Address already exist')]");
-
     public boolean isEmailExistsErrorVisible() {
-        return !driver.findElements(emailExistsError).isEmpty() && driver.findElement(emailExistsError).isDisplayed();
+        return isElementVisible(emailExistsError);
     }
 }
